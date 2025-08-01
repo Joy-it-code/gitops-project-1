@@ -136,9 +136,10 @@ kubectl get nodes
 ### Create and Push Repo to GitHub
 ```bash
 git init
-git remote add origin https://github.com/YOUR_USERNAME/gitops-project.git
-git add .
+git add README.md
 git commit -m "Initial project structure"
+git branch -M main
+git remote add origin https://github.com/YOUR_USERNAME/gitops-project.git
 git push -u origin main
 ```
 
@@ -158,7 +159,7 @@ __pycache__/
 
 ## 3: HELM: APP DEPLOYMENT
 
-### Helm App Setup
+### Create Helm Chart 
 ```bash
 helm create helm-app/my-app
 ```
@@ -170,35 +171,161 @@ rm -rf helm-app/my-app/tests
 
 ### Update files:
 
-`my-app/values.yaml`
+### Edit `helm-app/my-app/Chart.yaml`:
+
+```bash
+apiVersion: v2
+name: my-app
+description: A Helm chart for deploying My App
+type: application
+version: 0.1.0
+appVersion: "1.0"
+```
+
+
+### Edit `helm-app/my-app/values.yaml`
 ```bash
 replicaCount: 1
+
 image:
   repository: nginx
-  tag: latest
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: my-app.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources: {}
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 75
+serviceAccount:
+  create: true
+  name: ""
 ```
+
+
+### Edit `templates/deployment.yaml`
+```bash
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app: {{ .Chart.Name }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Chart.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Chart.Name }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.port }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+```
+
+
+### Edit `templates/service.yaml`
+```bash
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app: {{ .Chart.Name }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.port }}
+```
+
+
+
+### Edit `templates/ingress.yaml`
+```bash
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}
+  annotations:
+    {{- range $key, $value := .Values.ingress.annotations }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+spec:
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ $.Release.Name }}
+                port:
+                  number: {{ $.Values.service.port }}
+          {{- end }}
+    {{- end }}
+{{- end }}
+```
+
+
+
 
 
 ### Test Helm Chart Locally:
 ```bash
+cd helm-app/my-app
 helm lint .
+helm package helm-app/my-app
 ```
+
+
 
 
 ### Commit to Git
 ```bash
-git init
-git add .
-git commit -m "first commit"
-git branch -M main
-git remote add origin <YOUR_REPO>
-git push -u origin main
+git add helm-app/my-app
+git commit -m "Add Helm chart for my-app"
+git push
 ```
 
 ### Deploy Helm Chart in ArgoCD
-```bash
-mkdir -p argocd-apps && nano argocd-apps/helm-my-app.yaml
-```
+
+### Create `argocd-apps/helm-my-app.yaml`:
 
 ### Paste
 ```bash
@@ -233,8 +360,9 @@ kubectl apply -f argocd-apps/helm-my-app.yaml
 
 ### Test Helm App
 ```bash
-kubectl get all -l app.kubernetes.io/name=my-app
+kubectl get applications -n argocd
 ```
+
 
 
 ### Verify the Application in ArgoCD
@@ -242,6 +370,14 @@ kubectl get all -l app.kubernetes.io/name=my-app
 ```bash
 kubectl get applications -n argocd
 ```
+
+### Verify Deployment
+```bash
+kubectl get deployments
+kubectl get pods
+kubectl get svc
+```
+
 
 - Or Open the ArgoCD UI
 ```bash

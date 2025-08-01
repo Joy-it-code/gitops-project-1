@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: helm-my-app
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Joy-it-code/gitops-project-1.git
+    targetRevision: main
+    path: helm-app/my-app
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true

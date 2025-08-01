@@ -1,0 +1,9 @@
+*.log
+*.tmp
+*.bak
+.vault-token
+__pycache__/
+.DS_Store
+.idea/
+*.swp
+.env
