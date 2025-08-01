@@ -358,9 +358,11 @@ kubectl apply -f argocd-apps/helm-my-app.yaml
 ```
 
 
-### Test Helm App
+### Push to GitHub
 ```bash
-kubectl get applications -n argocd
+git add argocd-apps/helm-my-app.yaml
+git commit -m "argocd-apps/helm-my-app.yaml"
+git push origin main
 ```
 
 
@@ -377,6 +379,8 @@ kubectl get deployments
 kubectl get pods
 kubectl get svc
 ```
+![](./img/1c.get.app.svc.png)
+
 
 
 - Or Open the ArgoCD UI
@@ -384,13 +388,223 @@ kubectl get svc
 kubectl port-forward svc/argocd-server -n argocd 8080:443
 ```
 **Check on Browser `https://localhost:8080`**
+![](./img/1d.healthy.helm.pg1.png)
+![](./img/1e.healthy.helm.pg2.png)
 
 
-### push to GitHub
+### Access NGINX app (helm-my-app):
 ```bash
-git add argocd-apps/helm-my-app.yaml
-git commit -m "argocd-apps/helm-my-app.yaml"
-git push origin main
+kubectl port-forward svc/helm-my-app 8081:80
 ```
+**Then go to:`http://localhost:8081`**
+![](./img/1f.local.host.8081.png)
+
+
 
 ## 4: Kustomize App Setup
+
+- Create Kustomize base:
+```bash
+mkdir -p kustomize-app/my-app/base
+```
+
+### `base/kustomization.yaml`
+```bash
+resources:
+  - deployment.yaml
+  - service.yaml
+```
+
+### base/deployment.yaml
+```bash
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kustomize-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kustomize-app
+  template:
+    metadata:
+      labels:
+        app: kustomize-app
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:latest
+          ports:
+            - containerPort: 80
+```
+
+
+### `base/service.yaml`
+```bash
+apiVersion: v1
+kind: Service
+metadata:
+  name: kustomize-app
+spec:
+  type: ClusterIP
+  selector:
+    app: kustomize-app
+  ports:
+    - port: 80
+      targetPort: 80
+```
+
+## 5: Add Overlays
+
+### `overlays/dev/kustomization.yaml`
+```bash
+resources:
+  - ../../base
+patchesStrategicMerge:
+  - patch.yaml
+```
+
+### `overlays/dev/patch.yaml`
+```bash
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kustomize-app
+spec:
+  replicas: 2
+```
+
+**Duplicate `overlays/dev` for `overlays/prod` and set `replicas: 3`**
+
+### overlays/prod/kustomization.yaml
+```bash
+resources:
+  - ../../base
+patchesStrategicMerge:
+  - patch.yaml
+```
+
+### overlays/prod/patch.yaml
+```bash
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kustomize-app
+spec:
+  replicas: 3
+```
+
+### Test and Commit Kustomize Configurations:
+
+```bash
+cd kustomize-app/my-app/base
+kustomize build .
+git add kustomize-app/my-app
+git commit -m "Add Kustomize base and overlays"
+git push
+```
+
+
+## Deploy Kustomize App via ArgoCD
+
+- Create argocd-apps/kustomize-my-app-dev.yaml:
+
+```bash
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kustomize-my-app-dev
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/YOUR_USERNAME/gitops-project.git
+    targetRevision: main
+    path: kustomize-app/my-app/overlays/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+```
+
+
+### Apply it:
+```bash
+kubectl apply -f argocd-apps/kustomize-my-app-dev.yaml
+```
+
+
+
+### Run in the Right Environment
+
+### Enter WSL Ubuntu
+```bash
+wsl
+```
+
+### Verify Docker & Kind 
+```bash
+docker --version
+kind version
+```
+
+
+### Create the Kind Cluster
+```bash
+kind create cluster
+```
+
+
+### Confirm it’s running
+```bash
+kubectl get nodes
+```
+
+
+### Load your Docker image
+```bash
+mkdir -p ~/images
+cd ~/images
+docker save nginx:1.25.2 -o nginx.tar
+kind load docker-image nginx:1.25.2
+```
+
+
+
+### Update Deployment to Use That Image
+```bash
+image: nginx:1.25.2
+```
+
+
+
+### Push to GitHub
+```bash
+git add .
+git commit -m "Use nginx:1.25.2 for Kustomize app"
+git push
+```
+
+
+### Confirm in ArgoCD:
+```bash
+kubectl get applications -n argocd
+```
+
+
+### Verify Deployment 
+```bash
+kubectl get pods
+kubectl logs <pod-name>
+```
+
+
+or
+###  Port Forward to Test Locally:
+```bash
+kubectl port-forward svc/kustomize-app 8081:80
+```
+**Then go to: `https://localhost:8081`**
