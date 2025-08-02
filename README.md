@@ -680,3 +680,269 @@ git add .
 git commit -m "Use Vault reference for secrets"
 git push origin main
 ```
+
+### ArgoCD Sync :
+```bash
+argocd login localhost:8080 --username admin --password <argocd-password>
+argocd app list
+kubectl port-forward svc/helm-my-app 8080:80
+argocd app sync <your-app-name>
+```
+![](./img/2g.kust.sync.png)
+
+
+
+### Port-Forward Application
+
+#### port-forward the Helm app:
+```bash
+kubectl get svc
+kubectl port-forward svc/<actual-service-name> 8080:80
+```
+**Verify:`http://localhost:8080`**
+![](./img/2h.port.forward.helm.png)
+
+
+
+#### To port-forward the Kustomize app:
+```bash
+kubectl port-forward svc/kustomize-app 8081:80
+```
+**Verify: `http://localhost:8081`**
+![](./img/2e.kust.pg2.png)
+
+
+### Port-forward ArgoCD Server
+```bash
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+```
+
+### Log in to ArgoCD CLI
+```bash
+argocd login localhost:8080 --username admin --password <your-password> --insecure
+kubectl get pods -n argocd -l app.kubernetes.io/name=argocd-server -o name
+```
+**Copy the pod name (argocd-server-XXXXXXX) and use that as the password.**
+
+### Sync the app again
+```bash
+argocd app sync helm-my-app
+argocd app sync kustomize-my-app-dev
+```
+![](./img/2f.helm.sync.png)
+![](./img/2g.kust.sync.png)
+
+
+
+### Port-Forward Services for Easy Access on Browser:
+
+#### For the Helm app:
+```bash
+kubectl port-forward svc/helm-my-app 8080:80
+```
+**Visit in browser: `http://localhost:8080`**
+![](./img/2h.port.forward.helm.png)
+
+
+### For the Kustomize app:
+```bash
+kubectl port-forward svc/kustomize-app 8081:80
+```
+**Visit in browser: `http://localhost:8081`**
+![](./img/2g.port.kust.png)
+
+
+### View Secret content (Base64 decoded)
+```bash
+kubectl get secret my-secret -o yaml
+```
+
+### Then decode:
+```bash
+echo bXlwYXNzd29yZA== | base64 --decode
+```
+![](./img/2i.get.secret.png)
+
+
+
+ ## 7: Test GitHub Push (CI/CD Trigger Check)
+
+### Update the replicaCount in `helm-app/my-app/values.yaml`:
+
+```bash
+replicaCount: 2
+```
+
+### Commit & push:
+```bash
+git add helm-app/my-app/values.yaml
+git commit -m "Increase replica count to 2"
+git push origin main
+```
+
+### Confirm the Change is Deployed
+```bash
+argocd app sync helm-my-app
+kubectl get pods
+```
+![](./img/3a.deplymt.app.sync.png)
+![](./img/3b.get.pods.increased2.png)
+![](./img/3c.sync.increased.png)
+
+
+
+## 8:  Integrate HashiCorp Vault
+- Install Vault (dev mode):
+```bash
+vault server -dev
+```
+
+
+### Export Vault Env Vars
+```bash
+export VAULT_ADDR='http://127.0.0.1:8200'
+export VAULT_TOKEN='root'
+```
+
+
+
+### Store a secret in Vault:
+```bash
+vault kv put secret/myapp password=mypassword
+```
+
+### Verify Secret is Stored
+```bash
+vault kv get secret/myapp
+```
+![](./img/4a.get.secret.mypswd.png)
+
+
+
+### Start Vault
+```bash
+http://127.0.0.1:8200
+```
+![](./img/4b.sign.in.vault.png)
+![](./img/4c.welcome.pg.vault.png)
+
+
+
+### Create a Vault Policy
+
+- Create a policy file, `argocd-policy.hcl`:
+```bash
+path "secret/data/myapp" {
+  capabilities = ["read"]
+}
+```
+
+
+### Apply the policy:
+```bash
+vault policy write argocd-policy argocd-policy.hcl
+```
+
+### Generate Vault Token for ArgoCD
+
+- Create a token bound to the argocd-policy:
+```bash
+vault token create -policy=argocd-policy -format=json
+```
+**Copy the client_token from the JSON output.**
+
+
+
+### Create Kubernetes Secret for the Token
+```bash
+kubectl create secret generic avp-vault-token \
+  -n argocd \
+  --from-literal=token=<your-client-token-here>
+```
+
+
+
+### Patch ArgoCD Repo Server
+- Set environment variables so argocd-vault-plugin can access Vault.
+```bash
+kubectl edit deployment argocd-repo-server -n argocd
+```
+
+
+### Inside `spec.template.spec.containers.env`, add this block:
+```bash
+        - name: AVP_TYPE
+          value: vault
+        - name: AVP_AUTH_TYPE
+          value: token
+        - name: AVP_VAULT_ADDR
+          value: http://host.docker.internal:8200 
+        - name: AVP_VAULT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: avp-vault-token
+              key: token
+```
+
+### Restart:
+```bash
+kubectl rollout restart deployment argocd-repo-server -n argocd
+```
+
+
+### Prepare your Kubernetes manifest
+
+- Create a manifest. this placeholder `<path:secret/data/myapp#password>` will be replaced at runtime by AVP with the Vault secret value.
+
+`myapp-deployment.yaml`
+```bash
+apiVersion: v1
+kind: Secret
+metadata:
+  name: myapp-secret
+type: Opaque
+stringData:
+  password: <path:secret/data/myapp#password>
+```
+
+### Reference the plugin in your ArgoCD Application
+
+## Update `argocd-apps/helm-my-app.yaml`
+```bash
+spec:
+  source:
+    plugin:
+      name: avp-plugin
+```
+
+### Ensure AVP Plugin Config Exists
+
+`argocd-apps/.argocd-source-plugin.yaml`:
+```bash
+apiVersion: argoproj.io/v1alpha1
+kind: ConfigManagementPlugin
+metadata:
+  name: avp-plugin
+spec:
+  generate:
+    command: ["argocd-vault-plugin"]
+    args: ["generate", "."]
+```
+
+
+### Use AVP in Your Helm Deployment
+
+`helm-app/my-app/templates/deployment.yaml`
+```bash
+env:
+  - name: DB_PASSWORD
+    value: <path:secret/data/myapp#password>
+```
+
+
+### Push Changes to GitHub
+```bash
+git add .
+git commit -m "Configure AVP in Helm deployment and ArgoCD"
+git push origin main
+```
