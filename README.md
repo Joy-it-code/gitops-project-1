@@ -595,16 +595,60 @@ kubectl get applications -n argocd
 ```
 
 
+
 ### Verify Deployment 
 ```bash
 kubectl get pods
 kubectl logs <pod-name>
 ```
+![](./img/2a.get.pod.kust.png)
 
 
-or
+Or
+
 ###  Port Forward to Test Locally:
+- Port Forward One of Your Running Pods
+
+- Forward from helm-my-app:
 ```bash
-kubectl port-forward svc/kustomize-app 8081:80
+kubectl port-forward pod/helm-my-app-684797d6d4-cwvkt 8080:80
 ```
-**Then go to: `https://localhost:8081`**
+**Then open:`http://localhost:8080`**
+![](./img/2b.port.forward.helm.png)
+
+
+
+- Forward from `kustomize-app:`
+```bash
+kubectl port-forward pod/kustomize-app-6f45c44745-hg4r4 8081:80
+```
+**Then go to: `http://localhost:8081`**
+![](./img/2c.port.forward.kust.png)
+
+
+
+### ArgoCD Sync Check
+
+- Check sync status:
+```bash
+kubectl get applications -n argocd
+```
+![](./img/2d.get.argocd.health.png)
+
+
+### Log into ArgoCD UI:
+```bash
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+```
+**Then open: `https://localhost:8080`**
+
+
+
+### Push to GitHub
+
+```bash
+git status
+git add .
+git commit -m "Deploy nginx with ArgoCD and port-forward enabled"
+git push origin main
+```
