@@ -21,3 +21,9 @@ spec:
           ports:
             - containerPort: {{ .Values.service.port }}
           resources: {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: my-secret
+                  key: password

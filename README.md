@@ -652,3 +652,31 @@ git add .
 git commit -m "Deploy nginx with ArgoCD and port-forward enabled"
 git push origin main
 ```
+
+
+## 6: Secrets Management in Kubernetes
+- Create Kubernetes Secret:
+```bash
+kubectl create secret generic my-secret --from-literal=password=mypassword
+```
+
+### Reference in Deployment Manifest:
+```bash
+env:
+  - name: DB_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: my-secret
+        key: password
+```
+
+
+### Validate and Push to GitHub:
+```bash
+cd helm-app/my-app
+helm lint .
+cd ../..
+git add .
+git commit -m "Use Vault reference for secrets"
+git push origin main
+```
