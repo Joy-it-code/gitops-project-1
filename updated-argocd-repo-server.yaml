@@ -54,7 +54,7 @@ spec:
                 secretKeyRef:
                   key: token
                   name: avp-vault-token
-          image: quay.io/argoproj/argocd:v3.0.6
+          image: quay.io/argoproj/argocd:v2.9.3
           imagePullPolicy: Always
           livenessProbe:
             failureThreshold: 3
