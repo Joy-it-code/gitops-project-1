@@ -919,14 +919,20 @@ spec:
 
 `argocd-apps/.argocd-source-plugin.yaml`:
 ```bash
-apiVersion: argoproj.io/v1alpha1
-kind: ConfigManagementPlugin
+apiVersion: v1
+kind: ConfigMap
 metadata:
-  name: avp-plugin
-spec:
-  generate:
-    command: ["argocd-vault-plugin"]
-    args: ["generate", "."]
+  name: argocd-cm
+  namespace: argocd
+data:
+  configManagementPlugins: |
+    - name: avp-helm
+      init:
+        command: ["/bin/sh", "-c"]
+        args: ["helm dependency build"]
+      generate:
+        command: [ "argocd-vault-plugin" ]
+        args: [ "generate", "." ]
 ```
 
 
@@ -946,3 +952,111 @@ git add .
 git commit -m "Configure AVP in Helm deployment and ArgoCD"
 git push origin main
 ```
+
+### Verify Secret in Pod
+```bash
+kubectl exec -it deploy/<your-app-name> -- printenv | grep DB_PASSWORD
+kubectl edit deployment argocd-repo-server -n argocd
+depl
+ kubectl create secret generic avp-vault-token \
+  --from-literal=token=><password> \
+  -n argocd
+```
+
+### Create a Kubernetes ConfigMap with the plugin binary
+
+```bash
+curl -Lo argocd-vault-plugin https://github.com/argoproj-labs/argocd-vault-plugin/releases/latest/download/argocd-vault-plugin_linux_amd64
+chmod +x argocd-vault-plugin
+kubectl create configmap avp-plugin \
+  --from-file=argocd-vault-plugin=~/go/bin/argocd-vault-plugin \
+  -n argocd
+```
+
+
+ ### Patch the argocd-repo-server to mount the plugin
+ ```bash
+ kubectl -n argocd patch deployment argocd-repo-server --type=json -p='[
+  {
+    "op": "add",
+    "path": "/spec/template/spec/initContainers/-",
+    "value": {
+      "name": "install-plugins",
+      "image": "busybox",
+      "command": ["/bin/sh", "-c"],
+      "args": ["cp /avp/argocd-vault-plugin /custom-tools/argocd-vault-plugin && chmod +x /custom-tools/argocd-vault-plugin"],
+      "volumeMounts": [
+        {
+          "name": "avp-plugin",
+          "mountPath": "/avp"
+        },
+        {
+          "name": "custom-tools",
+          "mountPath": "/custom-tools"
+        }
+      ]
+    }
+  },
+  {
+    "op": "add",
+    "path": "/spec/template/spec/containers/0/volumeMounts/-",
+    "value": {
+      "name": "custom-tools",
+      "mountPath": "/custom-tools"
+    }
+  },
+  {
+    "op": "add",
+    "path": "/spec/template/spec/volumes/-",
+    "value": {
+      "name": "avp-plugin",
+      "configMap": {
+        "name": "avp-plugin",
+        "defaultMode": 493
+      }
+    }
+  },
+  {
+    "op": "add",
+    "path": "/spec/template/spec/volumes/-",
+    "value": {
+      "name": "custom-tools",
+      "emptyDir": {}
+    }
+  }
+]'
+```
+
+### Apply the Patch
+```bash
+kubectl -n argocd patch configmap argocd-cm \
+  --type merge \
+  -p '{"data":{"configManagementPlugins":"- name: avp-helm\n  init:\n    command: [\"/bin/sh\", \"-c\"]\n    args: [\"helm dependency build\"]\n  generate:\n    command: [\"argocd-vault-plugin\"]\n    args: [\"generate\", \".\"]"}}'
+```
+
+
+
+ ### Restart repo serve
+```bash
+kubectl -n argocd rollout restart deployment argocd-repo-server
+```
+
+
+### Verify Vault Plugin
+```bash
+argocd-vault-plugin
+```
+![](./img/4e.argocd.vault.plugin.png)
+
+
+### Recreate the ConfigMap with the Correct Binary and Restart
+```bash
+kubectl -n argocd create configmap avp-plugin \
+  --from-file=argocd-vault-plugin \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n argocd rollout restart deployment argocd-repo-server
+```
+![](./img/4f.avp-plugin.png)
+
+
+### Verify Pod Restart & Plugin Injection

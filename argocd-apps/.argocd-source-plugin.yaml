@@ -1,8 +1,14 @@
-apiVersion: argoproj.io/v1alpha1
-kind: ConfigManagementPlugin
+apiVersion: v1
+kind: ConfigMap
 metadata:
-  name: avp-plugin
-spec:
-  generate:
-    command: ["argocd-vault-plugin"]
-    args: ["generate", "."]
+  name: argocd-cm
+  namespace: argocd
+data:
+  configManagementPlugins: |
+    - name: avp-helm
+      init:
+        command: ["/bin/sh", "-c"]
+        args: ["helm dependency build"]
+      generate:
+        command: [ "argocd-vault-plugin" ]
+        args: [ "generate", "." ]
