@@ -8,7 +8,7 @@ spec:
   source:
     repoURL: https://github.com/Joy-it-code/gitops-project-1.git
     targetRevision: main
-    path: .
+    path: app
   destination:
     server: https://kubernetes.default.svc
     namespace: default

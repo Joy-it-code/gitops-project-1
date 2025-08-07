@@ -12,8 +12,6 @@ __pycache__/
 *.tgz
 *.tar
 
-# Documentation images
-img/
 
 # Unintended ArgoCD-related files and directories
 argocd-apps/
