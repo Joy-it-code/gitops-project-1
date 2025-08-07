@@ -372,6 +372,9 @@ git push origin main
 ```bash
 kubectl get applications -n argocd
 ```
+![](./img/)
+
+
 
 ### Verify Deployment
 ```bash
@@ -1059,4 +1062,560 @@ kubectl -n argocd rollout restart deployment argocd-repo-server
 ![](./img/4f.avp-plugin.png)
 
 
+
+
 ### Verify Pod Restart & Plugin Injection
+```bash
+kubectl -n argocd get pods -l app.kubernetes.io/name=argocd-repo-server
+```
+
+### Apply 
+```bash
+kubectl apply -f path/to/your-file.yaml
+```
+
+### Commit and push the change to GitHub:
+```bash
+git add path/to/your-file.yaml
+git commit -m "Fix: set ArgoCD repo-server image to v2.9.3"
+git push origin main
+```
+
+### Sync the ArgoCD Application (either via UI or CLI):
+```bash
+argocd app sync <your-app-name>
+```
+![](./img/5a.app.sync.png)
+
+
+
+## 9: Integrating ArgoCD with AWS Secrets Manager using External Secrets Operator (ESO)
+
+- Install External Secrets Operator:
+```bash
+aws configure
+helm repo add external-secrets https://charts.external-secrets.io
+helm install external-secrets external-secrets/external-secrets \
+  --namespace external-secrets --create-namespace --set installCRDs=true
+```
+![](./img/6a.helm.repo.png)
+
+
+## Store a Secret in AWS Secrets Manager & IAM Policy
+
+```bash
+aws secretsmanager create-secret \
+  --name myapp/db-credentials \
+  --secret-string '{"DATABASE_PASSWORD":"your-db-password"}'
+```
+
+### Create IAM Policy for Secrets Access
+- Create a JSON policy allowing only read access to that specific secret.
+```bash
+touch secrets-access-policy.json
+```
+
+### Paste
+```bash
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "secretsmanager:GetSecretValue",
+      "Resource": "arn:aws:secretsmanager:<region>:<account-id>:secret:myapp/db-credentials*"
+    }
+  ]
+}
+```
+
+
+### Create the policy:
+```bash
+aws iam create-policy \
+  --policy-name ReadMyAppSecretPolicy \
+  --policy-document file://secrets-access-policy.json
+```
+
+
+### Attach the policy to the IAM role created by eksctl
+```bash
+aws iam attach-role-policy \
+  --role-name eksctl-my-eks-cluster-addon-iamserviceaccount-argocd-external-secrets-sa-Role1-<xxxx> \
+  --policy-arn arn:aws:iam::<ACCOUNT_ID>:policy/ReadMyAppSecretPolicy
+```
+
+
+### Find the IAM role name
+```bash
+eksctl get iamserviceaccount --cluster my-eks-cluster --name external-secrets-sa --namespace argocd
+```
+
+
+
+
+### Create EKS (Elastic Kubernetes Service) cluster
+```bash
+eksctl create cluster \
+  --name my-eks-cluster \
+  --region us-east-1 \
+  --nodes 2 \
+  --managed
+```
+
+
+### Create IAM Role for Kubernetes via IRSA
+- Create a role that Kubernetes ServiceAccounts can assume.
+
+```bash
+eksctl create iamserviceaccount \
+  --utils associate-iam-oidc-provider \
+  --name external-secrets-sa \
+  --namespace argocd \
+  --cluster <your-cluster-name> \
+  --attach-policy-arn arn:aws:iam::<account-id>:policy/ReadMyAppSecretPolicy \
+  --approve
+```
+
+
+### Create a Kubernetes ServiceAccount bound to the IAM role
+```bash
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-secrets-sa
+  namespace: argocd
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::<account-id>:role/<role-name>
+```
+
+
+
+### Create iamserviceaccount
+```bash
+eksctl create iamserviceaccount \
+  --name external-secrets-sa \
+  --namespace argocd \
+  --cluster my-eks-cluster \
+  --attach-policy-arn arn:aws:iam::<account-no>:policy/ReadMyAppSecretPolicy \
+  --approve
+```
+
+
+
+### Create a SecretStore
+`secretstore.yaml`
+```bash
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: aws-secret-store
+  namespace: argocd
+spec:
+  provider:
+    aws:
+      service: SecretsManager
+      region: us-east-1
+      auth:
+        jwt:
+          serviceAccountRef:
+            name: external-secrets-sa
+```
+
+### Apply:
+```bash
+kubectl apply -f secretstore.yaml
+```
+
+### Create the ExternalSecret Resource
+
+`externalsecret.yaml`
+
+```bash
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: db-secret
+  namespace: argocd
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: aws-secret-store
+    kind: SecretStore
+  target:
+    name: db-secret
+    creationPolicy: Owner
+  data:
+    - secretKey: DATABASE_PASSWORD
+      remoteRef:
+        key: myapp/db-credentials
+        property: DATABASE_PASSWORD
+```
+
+### Apply:
+```bash
+ kubectl apply -f secretstore.yaml
+ ```
+ ![](./img/6c.apply.secretstore.png)
+
+
+
+### Get the full details of the CRD and confirm the correct version:
+```bash
+kubectl get crd externalsecrets.external-secrets.io -o jsonpath='{.spec.versions[*].name}'
+```
+
+
+### Apply externalsecret:
+```bash
+kubectl apply -f externalsecret.yaml
+```
+![](./img/6b,apply.secret.png)
+
+
+### Verify the secret was created:
+```bash
+kubectl get externalsecret -n argocd
+kubectl get secret db-secret -n argocd
+```
+
+### Confirm the Secret was Created
+```bash
+kubectl get secret db-secret -n argocd -o yaml
+```
+
+
+### Integrate AWS Secrets Manager with ArgoCD via External Secrets
+
+- Store Secrets in AWS
+```bash
+aws secretsmanager create-secret --name myapp/password --secret-string "mypassword"
+```
+
+### Install External Secrets Operator
+```bash
+kubectl apply -f https://github.com/external-secrets/external-secrets/releases/latest/download/crds.yaml
+kubectl apply -f https://github.com/external-secrets/external-secrets/releases/latest/download/operator.yaml
+```
+
+### Clone and apply with Kustomize
+```bash
+git clone https://github.com/external-secrets/external-secrets.git
+cd external-secrets
+kubectl apply -k config/default
+```
+
+
+
+### Get AWS Access Keys & Encode
+- Create or Use an IAM User
+  - Go to the AWS Console → IAM → Users
+
+  - Select an existing user or create a new one
+
+  - Attach a policy like SecretsManagerReadWrite or SecretsManagerReadOnly
+
+  - Under "Security credentials", click "Create access key and secret access key"
+
+
+
+### Base64 Encode Credentials
+```bash
+echo -n 'YOUR_ACCESS_KEY' | base64
+echo -n 'YOUR_SECRET_KEY' | base64
+```
+
+
+### Create Kubernetes Secret
+
+- Create aws-secret.yaml:
+```bash
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aws-credentials
+  namespace: external-secrets
+type: Opaque
+data:
+  access-key: <base64-encoded-access-key>
+  secret-access-key: <base64-encoded-secret-access-key>
+```
+
+### Apply:
+```bash
+kubectl apply -f aws-secret.yaml
+```
+
+### Update ExternalSecret to Use the ClusterSecretStore
+
+- Create `externalsecret.yaml`:
+```bash
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: my-secret
+  namespace: default
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: aws-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: my-secret
+    creationPolicy: Owner
+  data:
+    - secretKey: password
+      remoteRef:
+        key: myapp/password
+```
+
+
+### Apply and Verify the Secret:
+```bash
+kubectl apply -f externalsecret.yaml
+kubectl get secret myapp-password -n default -o jsonpath='{.data.password}'   
+| base64 -d
+```
+![](./img/7akube.apply.extnal.secrt.png)
+
+
+
+
+### Install External Secrets Operator via Helm
+- Add the External Secrets Helm repository
+```bash
+helm upgrade external-secrets external-secrets/external-secrets \
+  -n external-secrets
+helm install external-secrets \
+  external-secrets/external-secrets \
+  -n external-secrets --create-namespace
+```
+![](./img/6d.secret.helm.png)
+
+
+
+### Verify the installation:
+```bash
+kubectl get crds | grep external-secrets.io
+```
+
+
+
+
+### Verify Secret Contents
+```bash
+kubectl describe externalsecret myapp-password -n default
+kubectl get secrets -n default
+kubectl get clustersecretstore aws-secrets-store
+kubectl get secret myapp-secret -n default -o jsonpath='{.data.password}' | base64 --decode
+```
+![](./img/7b.kube.describe.png)
+![](./img/7c.get.secret.png)
+
+
+
+
+### Verify the AWS secret:
+```bash
+aws secretsmanager describe-secret --secret-id myapp/password --region <your-aws-region>
+```
+![](./img/7d.secret.manager.png)
+
+
+
+
+## Customize argocd-cm ConfigMap
+
+- Add ArgoCD Helm Repository:
+```bash
+helm repo add argo https://argoproj.github.io/argo-helm
+helm repo update
+```
+
+### Add ArgoCD Helm Repository
+```bash
+helm install argocd argo/argo-cd --namespace argocd --create-namespace
+```
+
+
+### Verify Installation:
+
+- Check deployments
+```bash
+kubectl get deployments -n argocd
+```
+
+### Check pods:
+```bash
+kubectl get pods -n argocd
+```
+
+
+### Create argocd-cm.yaml
+```bash
+mkdir -p argocd-apps
+nano argocd-apps/argocd-cm.yaml
+```
+
+
+### Paste
+```bash
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: argocd
+    meta.helm.sh/release-namespace: argocd
+data:
+  resource.customizations: |
+    external-secrets.io/ExternalSecret:
+      health.lua: |
+        hs = {}
+        if obj.status ~= nil then
+          for i, condition in ipairs(obj.status.conditions) do
+            if condition.type == "Ready" and condition.status == "True" then
+              hs.status = "Healthy"
+              hs.message = condition.message or "ExternalSecret is ready"
+              return hs
+            end
+          end
+          hs.status = "Degraded"
+          hs.message = "ExternalSecret is not ready"
+        else
+          hs.status = "Degraded"
+          hs.message = "Status not found"
+        end
+        return hs
+  resource.ignoreDifferences: |
+    - group: networking.k8s.io
+      kind: Ingress
+      jsonPointers:
+        - /metadata/annotations
+```
+
+
+### Apply:
+```bash
+kubectl apply -f argocd-apps/argocd-cm.yaml
+```
+
+
+### Restart and Verify ArgoCD:
+```bash
+kubectl rollout restart deployment argocd-repo-server -n argocd
+kubectl rollout restart deployment argocd-application-controller -n argocd
+kubectl rollout restart statefulset argocd-application-controller -n argocd
+kubectl get pods -n argocd
+kubectl get externalsecret myapp-password -n default
+kubectl get clustersecretstore aws-secrets-store
+```
+![](./img/7e.kube.pswd.png)
+
+
+
+### Create application.yaml:
+```bash
+nano application.yaml
+```
+
+### Paste:
+```bash
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: myapp
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: <your-git-repo-url>
+    targetRevision: main
+    path: .
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - Validate=true
+      - CreateNamespace=true
+  ignoreDifferences:
+  - group: ""
+    kind: Secret
+    name: myapp-secret
+    jsonPointers:
+    - /data
+```
+
+
+### Apply:
+```bash
+kubectl apply -f application.yaml
+```
+
+
+### Create myapp-pod.yaml
+
+```bash
+apiVersion: v1
+kind: Pod
+metadata:
+  name: myapp-pod
+  namespace: default
+spec:
+  containers:
+  - name: myapp
+    image: nginx:latest
+    env:
+    - name: APP_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: myapp-secret
+          key: password
+```
+
+
+
+### Create myapp-pod.yaml :
+```bash
+nano myapp-pod.yaml
+```
+
+### Paste:
+```bash
+yamlapiVersion: v1
+kind: Pod
+metadata:
+  name: myapp-pod
+  namespace: default
+spec:
+  containers:
+  - name: myapp
+    image: nginx:latest
+    env:
+    - name: APP_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: myapp-secret
+          key: password
+```
+
+### Apply:
+```bash
+kubectl apply -f myapp-pod.yaml
+```
+
+### Commit Files to Git
+
+```bash
+git add externalsecret.yaml clustersecretstore.yaml application.yaml argocd/argocd-cm.yaml myapp-pod.yaml
+git commit -m "Add ArgoCD application, ExternalSecret, ClusterSecretStore, ConfigMap, and pod"
+git push origin main
+```
+
