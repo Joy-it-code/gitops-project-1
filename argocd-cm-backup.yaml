@@ -1,0 +1,59 @@
+apiVersion: v1
+data:
+  resource.customizations: |
+    external-secrets.io/ExternalSecret:
+      health.lua: |
+        hs = {}
+        if obj.status ~= nil then
+          for i, condition in ipairs(obj.status.conditions) do
+            if condition.type == "Ready" and condition.status == "True" then
+              hs.status = "Healthy"
+              hs.message = condition.message or "ExternalSecret is ready"
+              return hs
+            end
+          end
+          hs.status = "Degraded"
+          hs.message = "ExternalSecret is not ready"
+        else
+          hs.status = "Degraded"
+          hs.message = "Status not found"
+        end
+        return hs
+  resource.exclusions: |
+    - apiGroups:
+        - apps
+      kinds:
+        - Deployment
+      name: argocd-repo-server
+      namespace: argocd
+    - apiGroups:
+        - argoproj.io
+      kinds:
+        - Application
+      name: myapp
+      namespace: argocd
+    - apiGroups:
+        - ""
+      kinds:
+        - ConfigMap
+      name: argocd-cm
+      namespace: argocd
+  resource.ignoreDifferences: |
+    - group: networking.k8s.io
+      kind: Ingress
+      jsonPointers:
+        - /metadata/annotations
+kind: ConfigMap
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"resource.customizations":"external-secrets.io/ExternalSecret:\n  health.lua: |\n    hs = {}\n    if obj.status ~= nil then\n      for i, condition in ipairs(obj.status.conditions) do\n        if condition.type == \"Ready\" and condition.status == \"True\" then\n          hs.status = \"Healthy\"\n          hs.message = condition.message or \"ExternalSecret is ready\"\n          return hs\n        end\n      end\n      hs.status = \"Degraded\"\n      hs.message = \"ExternalSecret is not ready\"\n    else\n      hs.status = \"Degraded\"\n      hs.message = \"Status not found\"\n    end\n    return hs\n","resource.exclusions":"- apiGroups:\n    - apps\n  kinds:\n    - Deployment\n  name: argocd-repo-server\n  namespace: argocd\n- apiGroups:\n    - argoproj.io\n  kinds:\n    - Application\n  name: myapp\n  namespace: argocd\n- apiGroups:\n    - \"\"\n  kinds:\n    - ConfigMap\n  name: argocd-cm\n  namespace: argocd\n","resource.ignoreDifferences":"- group: networking.k8s.io\n  kind: Ingress\n  jsonPointers:\n    - /metadata/annotations\n"},"kind":"ConfigMap","metadata":{"annotations":{"meta.helm.sh/release-name":"argocd","meta.helm.sh/release-namespace":"argocd"},"labels":{"app.kubernetes.io/managed-by":"Helm"},"name":"argocd-cm","namespace":"argocd"}}
+    meta.helm.sh/release-name: argocd
+    meta.helm.sh/release-namespace: argocd
+  creationTimestamp: "2025-08-07T03:12:47Z"
+  labels:
+    app.kubernetes.io/managed-by: Helm
+  name: argocd-cm
+  namespace: argocd
+  resourceVersion: "634116"
+  uid: 24eed12c-0267-4269-9d63-b33ea4479f45

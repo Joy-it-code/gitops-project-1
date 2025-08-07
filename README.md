@@ -1609,7 +1609,7 @@ spec:
 
 ### Apply:
 ```bash
-kubectl apply -f myapp-pod.yaml
+kubectl apply -f app/myapp-pod.yaml
 ```
 
 ### Commit Files to Git
@@ -1623,4 +1623,6 @@ git push origin main
 ### Verify ArgoCD Components:
 ```bash
 kubectl get all -n argocd
+kubectl logs -n argocd -l app.kubernetes.io/name=argocd-repo-server
 ```
+![](./img/8a.health.check.png)
