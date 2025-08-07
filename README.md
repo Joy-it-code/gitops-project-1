@@ -95,7 +95,7 @@ kubectl get nodes
 ###  Install ArgoCD
 ```bash
 kubectl create namespace argocd
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.9.3/manifests/install.yaml
 ```
 
 
@@ -103,6 +103,7 @@ kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/st
 ### Access ArgoCD UI
 ```bash
 kubectl port-forward svc/argocd-server -n argocd 8080:443
+kubectl get svc argocd-server -n argocd
 ```
 **Visit: `http://localhost:8080`**
 
@@ -112,7 +113,7 @@ kubectl port-forward svc/argocd-server -n argocd 8080:443
 - Get the default admin password:
 ```bash
 kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d && echo
-argocd login localhost:8080 --username admin --password <paste-password>
+argocd login localhost:8080 --username admin --password $(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d) --insecure
 ```
 
 **Login using:**
@@ -1619,3 +1620,7 @@ git commit -m "Add ArgoCD application, ExternalSecret, ClusterSecretStore, Confi
 git push origin main
 ```
 
+### Verify ArgoCD Components:
+```bash
+kubectl get all -n argocd
+```
