@@ -27,6 +27,7 @@ stripped-bundle.yaml
 updated-argocd-repo-server.yaml
 secretstore.yaml
 argocd-vault-plugin
+my-app-0.1.0.tgz nginx.tar
 
 # General Git ignores
 *.log
