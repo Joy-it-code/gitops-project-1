@@ -7,3 +7,32 @@ __pycache__/
 .idea/
 *.swp
 .envnginx-fixed.tar
+
+# Temporary files and build artifacts
+*.tgz
+*.tar
+
+# Documentation images
+img/
+
+# Unintended ArgoCD-related files and directories
+argocd-apps/
+helm-app/
+kustomize-app/
+argocd-vault-plugin/
+argocd-policy.hcl
+read-secret-policy.json
+aws-credentials.yaml
+aws-secret.yaml
+bundle.yaml
+stripped-bundle.yaml
+updated-argocd-repo-server.yaml
+secretstore.yaml
+
+# General Git ignores
+*.log
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.bak
