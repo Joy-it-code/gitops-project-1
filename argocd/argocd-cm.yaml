@@ -33,22 +33,4 @@ data:
       kind: Ingress
       jsonPointers:
         - /metadata/annotations
-  resource.exclusions: |
-    - apiGroups:
-        - apps
-      kinds:
-        - Deployment
-      name: argocd-repo-server
-      namespace: argocd
-    - apiGroups:
-        - argoproj.io
-      kinds:
-        - Application
-      name: myapp
-      namespace: argocd
-    - apiGroups:
-        - ""
-      kinds:
-        - ConfigMap
-      name: argocd-cm
-      namespace: argocd
+        

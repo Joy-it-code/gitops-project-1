@@ -2,7 +2,11 @@
 
 ## Project Overview
 
-This mini project demonstrates GitOps-based configuration management using **ArgoCD**, **Helm**, **Kustomize**, and **Vault** for secret management. The setup simulates real-world GitOps workflows with automated deployments, environment-based configurations, and secure secret injection.
+This project demonstrates a **real-world GitOps workflow** integrating ArgoCD, Helm, Kustomize, Vault, and AWS Secrets Manager.  
+It shows how to:
+- Deploy apps with Helm and Kustomize overlays.
+- Inject secrets securely from Vault and AWS Secrets Manager.
+- Automate configuration sync with ArgoCD.
 
 
 ## Project Structure
@@ -1626,3 +1630,38 @@ kubectl get all -n argocd
 kubectl logs -n argocd -l app.kubernetes.io/name=argocd-repo-server
 ```
 ![](./img/8a.health.check.png)
+
+
+
+## Challenges & Solutions 
+
+### | Challenge                      | Root Cause                                     | Solution |
+---
+
+| **ArgoCD Server CrashLoopBackOff** | `argocd-cm` was excluded from ArgoCD resources | Removed exclusion in ConfigMap, restarted ArgoCD pods. |
+| **Pods not updating after config change** | Config changes not reloaded automatically | Rolled out restarts for deployments/statefulsets. |
+| **Secrets injection via Vault plugin** | Vault token/env vars not mounted correctly | Patched `argocd-repo-server` to include `AVP_VAULT_TOKEN` and mounted plugin binary. |
+| **AWS External Secrets not syncing** | Missing IAM permissions for ServiceAccount | Attached `SecretsManager` read policy to the IAM role and annotated the service account. |
+
+---
+
+
+## Lessons Learned
+- GitOps works best when **everything is declared** in Git — even ArgoCD config itself.
+- Always restart ArgoCD components after major config changes.
+- Use Kustomize overlays to **separate environments** cleanly.
+- Vault & External Secrets Operator are powerful but require careful **RBAC/IAM setup**.
+
+---
+
+
+## Conclusion  
+This project successfully integrated **Helm, Kustomize, Vault, and AWS Secrets Manager** with ArgoCD for a full GitOps workflow.  
+With automated syncs, secure secret injection, and environment-based deployments, this setup mirrors a production-ready GitOps pipeline.  
+It also highlights how to troubleshoot common issues (config exclusions, secret injection, IAM policies). 
+
+
+## Author 
+- **Joy Nwatuzor**
+- **DevOps Engineer**
+- **Github:** Joy-it-code
